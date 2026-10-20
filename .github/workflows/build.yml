@@ -18,14 +18,14 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip make perl curl
+          sudo apt-get install -y git curl unzip make perl
 
       - name: Extract source ZIP
         run: |
           mkdir -p source
           unzip -o about.zip -d source
           echo "=== Extracted files ==="
-          find source -maxdepth 6 -type f | sort
+          find source -maxdepth 7 -type f | sort | head -200
 
       - name: Locate tweak Makefile
         run: |
@@ -41,40 +41,77 @@ jobs:
           echo "MAKEFILE_PATH=$FILE" >> "$GITHUB_ENV"
           echo "Tweak Makefile: $FILE"
 
-      - name: Set up Theos
-        uses: Randomblock1/theos-action@v1
-        with:
-          theos-dir: theos
-          theos-src: https://github.com/theos/theos
-          theos-sdks: https://github.com/theos/sdks
-
-      - name: Verify Theos and SDKs
+      - name: Install Theos
         run: |
-          echo "=== Theos ==="
-          ls -la theos
-          echo "=== SDKs ==="
-          find theos/sdks -maxdepth 1 -type d 2>/dev/null || true
-          test -x theos/bin/nic.pl || test -d theos/makefiles
+          git clone --depth 1 https://github.com/theos/theos.git "$GITHUB_WORKSPACE/theos"
+          echo "THEOS=$GITHUB_WORKSPACE/theos" >> "$GITHUB_ENV"
+
+      - name: Install Theos SDKs
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/theos/sdks"
+          cd /tmp
+
+          curl -fL \
+            https://github.com/theos/sdks/archive/refs/heads/master.zip \
+            -o sdks.zip
+
+          unzip -q -o sdks.zip
+
+          echo "=== SDK folders found ==="
+          find /tmp/sdks-master -maxdepth 1 -type d -name '*.sdk' -print
+
+          find /tmp/sdks-master -maxdepth 1 -type d -name '*.sdk' \
+            -exec cp -R {} "$GITHUB_WORKSPACE/theos/sdks/" \;
+
+          echo "=== SDKs installed ==="
+          ls -la "$GITHUB_WORKSPACE/theos/sdks"
+
+          if ! find "$GITHUB_WORKSPACE/theos/sdks" -maxdepth 1 -type d -name '*.sdk' | grep -q .; then
+            echo "ERROR: No SDK directories were installed."
+            echo "Checking downloaded archive:"
+            unzip -l /tmp/sdks.zip | head -80
+            exit 1
+          fi
+
+      - name: Verify Theos
+        run: |
+          test -d "$THEOS/makefiles"
+          test -d "$THEOS/sdks"
+          echo "Theos path: $THEOS"
+          echo "Theos and SDK folders verified."
 
       - name: Build About tweak
         run: |
+          export THEOS="$GITHUB_WORKSPACE/theos"
           cd "$(dirname "$MAKEFILE_PATH")"
+
+          echo "=== Building from ==="
+          pwd
+
+          echo "=== Makefile ==="
+          cat Makefile
+
           make clean
           make package FINALPACKAGE=1
 
       - name: Locate compiled packages
+        if: success()
         run: |
-          echo "=== Searching for packages ==="
-          find . -type f -name '*.deb' -print
           mkdir -p "$GITHUB_WORKSPACE/output"
-          find source -type f -name '*.deb' -exec cp {} "$GITHUB_WORKSPACE/output/" \;
 
-          if ! find output -type f -name '*.deb' | grep -q .; then
+          find source -type f -name '*.deb' \
+            -exec cp {} "$GITHUB_WORKSPACE/output/" \;
+
+          echo "=== Compiled packages ==="
+          find "$GITHUB_WORKSPACE/output" -type f -name '*.deb'
+
+          if ! find "$GITHUB_WORKSPACE/output" -type f -name '*.deb' | grep -q .; then
             echo "ERROR: No .deb package was generated."
             exit 1
           fi
 
       - name: Upload compiled packages
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: About-build
