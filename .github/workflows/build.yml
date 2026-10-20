@@ -1,0 +1,57 @@
+
+name: Build About Tweak
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository files
+        uses: actions/checkout@v4
+
+      - name: Install unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip
+
+      - name: Extract source ZIP
+        run: |
+          mkdir -p source
+          unzip -o about.zip -d source
+          echo "Files extracted:"
+          find source -maxdepth 5 -type f | sort
+
+      - name: Locate tweak Makefile
+        run: |
+          FILE="$(find source -name Makefile -type f | head -n 1)"
+          if [ -z "$FILE" ]; then
+            echo "ERROR: No Makefile found in ZIP."
+            exit 1
+          fi
+          echo "MAKEFILE_PATH=$FILE" >> "$GITHUB_ENV"
+          echo "Tweak Makefile: $FILE"
+
+      - name: Set up Theos
+        uses: Randomblock1/theos-action@v1
+        with:
+          theos-dir: theos
+          theos-src: https://github.com/theos/theos
+          theos-sdks: https://github.com/theos/sdks
+
+      - name: Build About tweak
+        run: |
+          cd "$(dirname "$MAKEFILE_PATH")"
+          make clean
+          make package FINALPACKAGE=1
+
+      - name: Upload compiled packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: About-build
+          path: source/**/*.deb
+          if-no-files-found: error
+          
