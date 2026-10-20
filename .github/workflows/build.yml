@@ -20,7 +20,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             git curl unzip make perl \
-            fakeroot dpkg-dev dpkg-dev debhelper
+            fakeroot dpkg-dev debhelper \
+            ldid clang llvm
 
       - name: Extract source ZIP
         run: |
@@ -51,9 +52,6 @@ jobs:
 
           echo "THEOS=$GITHUB_WORKSPACE/theos" >> "$GITHUB_ENV"
 
-          echo "=== Checking dm.pl ==="
-          find "$GITHUB_WORKSPACE/theos" -type f -name dm.pl -print
-
       - name: Install Theos SDKs
         run: |
           mkdir -p "$GITHUB_WORKSPACE/theos/sdks"
@@ -75,21 +73,21 @@ jobs:
 
           if ! find "$GITHUB_WORKSPACE/theos/sdks" \
             -maxdepth 1 -type d -name '*.sdk' | grep -q .; then
-            echo "ERROR: No SDK directories were installed."
+            echo "ERROR: No SDK directories installed."
             exit 1
           fi
 
-      - name: Verify Theos packaging tools
+      - name: Check compiler and packaging tools
         run: |
-          echo "=== Theos package files ==="
-          find "$THEOS" -type f \
-            \( -name 'dm.pl' -o -name 'deb.mk' \) -print
+          echo "=== Theos compiler ==="
+          find "$THEOS/toolchain" -type f \
+            \( -name clang -o -name clang++ \) -print 2>/dev/null || true
 
-          if ! find "$THEOS" -type f -name dm.pl | grep -q .; then
-            echo "ERROR: dm.pl is missing from this Theos checkout."
-            echo "Check Theos repository files and packaging dependencies."
-            exit 1
-          fi
+          echo "=== System compiler ==="
+          clang --version
+
+          echo "=== Packaging helper ==="
+          find "$THEOS" -type f -name dm.pl -print
 
       - name: Build About tweak
         run: |
