@@ -15,23 +15,29 @@ jobs:
       - name: Download repository files
         uses: actions/checkout@v4
 
-      - name: Install unzip
-        run: sudo apt-get update && sudo apt-get install -y unzip
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip make perl curl
 
       - name: Extract source ZIP
         run: |
           mkdir -p source
           unzip -o about.zip -d source
-          echo "Files extracted:"
-          find source -maxdepth 5 -type f | sort
+          echo "=== Extracted files ==="
+          find source -maxdepth 6 -type f | sort
 
       - name: Locate tweak Makefile
         run: |
-          FILE="$(find source -name Makefile -type f | head -n 1)"
+          FILE="$(find source -type f -name Makefile | head -n 1)"
+
           if [ -z "$FILE" ]; then
-            echo "ERROR: No Makefile found in ZIP."
+            echo "ERROR: No Makefile found in about.zip"
+            echo "ZIP contents:"
+            unzip -l about.zip | head -100
             exit 1
           fi
+
           echo "MAKEFILE_PATH=$FILE" >> "$GITHUB_ENV"
           echo "Tweak Makefile: $FILE"
 
@@ -42,16 +48,35 @@ jobs:
           theos-src: https://github.com/theos/theos
           theos-sdks: https://github.com/theos/sdks
 
+      - name: Verify Theos and SDKs
+        run: |
+          echo "=== Theos ==="
+          ls -la theos
+          echo "=== SDKs ==="
+          find theos/sdks -maxdepth 1 -type d 2>/dev/null || true
+          test -x theos/bin/nic.pl || test -d theos/makefiles
+
       - name: Build About tweak
         run: |
           cd "$(dirname "$MAKEFILE_PATH")"
           make clean
           make package FINALPACKAGE=1
 
+      - name: Locate compiled packages
+        run: |
+          echo "=== Searching for packages ==="
+          find . -type f -name '*.deb' -print
+          mkdir -p "$GITHUB_WORKSPACE/output"
+          find source -type f -name '*.deb' -exec cp {} "$GITHUB_WORKSPACE/output/" \;
+
+          if ! find output -type f -name '*.deb' | grep -q .; then
+            echo "ERROR: No .deb package was generated."
+            exit 1
+          fi
+
       - name: Upload compiled packages
         uses: actions/upload-artifact@v4
         with:
           name: About-build
-          path: source/**/*.deb
+          path: output/*.deb
           if-no-files-found: error
-          
