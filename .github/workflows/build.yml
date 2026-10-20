@@ -18,12 +18,15 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git curl unzip make perl
+          sudo apt-get install -y \
+            git curl unzip make perl \
+            fakeroot dpkg-dev dpkg-dev debhelper
 
       - name: Extract source ZIP
         run: |
           mkdir -p source
           unzip -o about.zip -d source
+
           echo "=== Extracted files ==="
           find source -maxdepth 7 -type f | sort | head -200
 
@@ -33,7 +36,6 @@ jobs:
 
           if [ -z "$FILE" ]; then
             echo "ERROR: No Makefile found in about.zip"
-            echo "ZIP contents:"
             unzip -l about.zip | head -100
             exit 1
           fi
@@ -43,8 +45,14 @@ jobs:
 
       - name: Install Theos
         run: |
-          git clone --depth 1 https://github.com/theos/theos.git "$GITHUB_WORKSPACE/theos"
+          git clone --depth 1 --recurse-submodules \
+            https://github.com/theos/theos.git \
+            "$GITHUB_WORKSPACE/theos"
+
           echo "THEOS=$GITHUB_WORKSPACE/theos" >> "$GITHUB_ENV"
+
+          echo "=== Checking dm.pl ==="
+          find "$GITHUB_WORKSPACE/theos" -type f -name dm.pl -print
 
       - name: Install Theos SDKs
         run: |
@@ -57,28 +65,31 @@ jobs:
 
           unzip -q -o sdks.zip
 
-          echo "=== SDK folders found ==="
-          find /tmp/sdks-master -maxdepth 1 -type d -name '*.sdk' -print
-
-          find /tmp/sdks-master -maxdepth 1 -type d -name '*.sdk' \
+          find /tmp/sdks-master \
+            -maxdepth 1 -type d -name '*.sdk' \
             -exec cp -R {} "$GITHUB_WORKSPACE/theos/sdks/" \;
 
-          echo "=== SDKs installed ==="
-          ls -la "$GITHUB_WORKSPACE/theos/sdks"
+          echo "=== Installed SDKs ==="
+          find "$GITHUB_WORKSPACE/theos/sdks" \
+            -maxdepth 1 -type d -name '*.sdk' -print
 
-          if ! find "$GITHUB_WORKSPACE/theos/sdks" -maxdepth 1 -type d -name '*.sdk' | grep -q .; then
+          if ! find "$GITHUB_WORKSPACE/theos/sdks" \
+            -maxdepth 1 -type d -name '*.sdk' | grep -q .; then
             echo "ERROR: No SDK directories were installed."
-            echo "Checking downloaded archive:"
-            unzip -l /tmp/sdks.zip | head -80
             exit 1
           fi
 
-      - name: Verify Theos
+      - name: Verify Theos packaging tools
         run: |
-          test -d "$THEOS/makefiles"
-          test -d "$THEOS/sdks"
-          echo "Theos path: $THEOS"
-          echo "Theos and SDK folders verified."
+          echo "=== Theos package files ==="
+          find "$THEOS" -type f \
+            \( -name 'dm.pl' -o -name 'deb.mk' \) -print
+
+          if ! find "$THEOS" -type f -name dm.pl | grep -q .; then
+            echo "ERROR: dm.pl is missing from this Theos checkout."
+            echo "Check Theos repository files and packaging dependencies."
+            exit 1
+          fi
 
       - name: Build About tweak
         run: |
@@ -88,13 +99,10 @@ jobs:
           echo "=== Building from ==="
           pwd
 
-          echo "=== Makefile ==="
-          cat Makefile
-
           make clean
           make package FINALPACKAGE=1
 
-      - name: Locate compiled packages
+      - name: Collect compiled packages
         if: success()
         run: |
           mkdir -p "$GITHUB_WORKSPACE/output"
@@ -105,7 +113,8 @@ jobs:
           echo "=== Compiled packages ==="
           find "$GITHUB_WORKSPACE/output" -type f -name '*.deb'
 
-          if ! find "$GITHUB_WORKSPACE/output" -type f -name '*.deb' | grep -q .; then
+          if ! find "$GITHUB_WORKSPACE/output" \
+            -type f -name '*.deb' | grep -q .; then
             echo "ERROR: No .deb package was generated."
             exit 1
           fi
